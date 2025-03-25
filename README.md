@@ -1,1 +1,22 @@
-# betterTeTiming
+# Better TE Timing
+
+A Rscript aiming to better approximate the recency of TE insertions by calculating genetic distance from the most similar TE
+
+Current dependancies
+- MAFFT
+- BLAST+
+- R (with optparse purrr biostrings bsgenome ape ips tidyverse plyranges installed)
+
+
+For easy set up with mamba: `mamba create -n betterDist conda-forge::r-optparse conda-forge::r-purrr bioconda::bioconductor-biostrings bioconda::bioconductor-bsgenome conda-forge::r-ape conda-forge::r-ips conda-forge::r-tidyverse bioconda::bioconductor-plyranges bioconda::mafft bioconda::blast`
+
+
+To run from terminal:
+```
+Rscript nearestDistance.R \
+    -g </path/to/genome_assembly.fasta>  \
+    -l </path/to/earlgrey_library.fasta> \
+    -a </path/to/earlgrey_annotation.gff> \
+    -o </path/to/out/directory> \
+    -t 16
+```
