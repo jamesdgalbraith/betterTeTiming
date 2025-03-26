@@ -86,7 +86,7 @@ gff2seq <- function(genome_path, library_path, gff_path, min_len, min_n){
   # Read in TEs, fix Penelopes, select necessary columns, 
   eg_gff <- plyranges::read_gff(gff_path) %>%
     plyranges::filter(seqnames %in% seqnames(genome_idx)) %>%
-    dplyr::select(type, ID) %>%
+    dplyr::select(type, ID, KIMURA80) %>%
     dplyr::mutate(type = ifelse(type == "LINE/Penelope", "PLE/Penelope", as.character(type))) %>%
     dplyr::mutate(subclass = sub("/.*", "", type),
                   superfamily = sub("-.*", "", sub(".*/", "", type))) %>%
