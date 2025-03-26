@@ -20,3 +20,6 @@ Rscript nearestDistance.R \
     -o </path/to/out/directory> \
     -t 16
 ```
+
+
+The gff should have the subclass and superfamily of TEs formatted in the RepeatMasker/Repbase style in the type column (e.g. `LINE/CR1`), and the family/subfamily of the TE as described in the TE library's FASTA headers (e.g. `rnd_1-family_1`)
