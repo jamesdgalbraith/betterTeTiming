@@ -186,7 +186,7 @@ alnDist <- function(seq_in){
   # get unaligned sequences and convert to ape
   unaln_ape <- ape::as.DNAbin(seq_in)
   # align with mafft
-  aln_ape <- ips::mafft(unaln_ape, method = "localpair", thread = 1, exec = mafft_path)
+  aln_ape <- ips::mafft(unaln_ape, method = "localpair", thread = 1, exec = mafft_path, options = "--adjustdirection")
   # calculate distances
   dist_df <- base::data.frame(names = names(seq_in)[1],
                               kdist = ape::dist.dna(aln_ape, model="K80", pairwise.deletion = TRUE)[1],
