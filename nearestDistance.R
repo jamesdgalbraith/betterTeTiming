@@ -91,7 +91,7 @@ gff2seq <- function(genome_path, library_path, gff_path, min_len, min_n){
     dplyr::mutate(subclass = sub("/.*", "", type),
                   superfamily = sub("-.*", "", sub(".*/", "", type))) %>%
     dplyr::filter(subclass != "Other") %>%
-    dplyr::filter(subclass %in% c("LINE", "LTR", "DNA", "PLE"),  # just for testing, alter when complete
+    dplyr::filter(subclass %in% c("LINE", "LTR", "DNA", "PLE", "RC", "SINE"),  # just for testing, alter when complete
                   width >=min_len) %>%
     dplyr::mutate(ID = tolower(ID))
   message("Reading library")
@@ -180,21 +180,6 @@ getSeqBlastn <- function(eg_gff, eg_seq, subclass_n, outdir, n_threads, min_cov)
   
 }
 
-# Function for calculating distance
-alnDist <- function(seq_in){
-  
-  # get unaligned sequences and convert to ape
-  unaln_ape <- ape::as.DNAbin(seq_in)
-  # align with mafft
-  aln_ape <- ips::mafft(unaln_ape, method = "localpair", thread = 1, exec = mafft_path, options = "--adjustdirection")
-  # calculate distances
-  dist_df <- base::data.frame(names = names(seq_in)[1],
-                              kdist = ape::dist.dna(aln_ape, model="K80", pairwise.deletion = TRUE)[1],
-                              jcdist = ape::dist.dna(aln_ape, model="JC69", pairwise.deletion = TRUE)[1],
-                              rawdist = ape::dist.dna(aln_ape, model="raw", pairwise.deletion = TRUE)[1])
-  return(dist_df)
-}
-
 # Get repeat sequence and classes
 repeat_data <- gff2seq(opt$genome, opt$library, opt$annotation_gff, opt$min_len, opt$min_n)
 
@@ -202,32 +187,102 @@ repeat_data <- gff2seq(opt$genome, opt$library, opt$annotation_gff, opt$min_len,
 blastOut <- getSeqBlastn(repeat_data[[1]], repeat_data[[2]], repeat_data[[3]], opt$outdir, opt$threads, opt$min_cov)
 comp_blast <- blastOut[[1]]
 comp_seq <- blastOut[[2]]
+base::remove(blastOut)
+suppressMessages(gc())
+uniq_blast <- comp_blast %>%
+  dplyr::select(qseqid, sseqid) %>%
+  base::unique()
 
 # write sequences and best hit to file
 readr::write_tsv(comp_blast, paste0(opt$outdir, "/blast_best_hits.tsv"))
 Biostrings::writeXStringSet(comp_seq, paste0(opt$outdir, "/genomic_te_sequences.fasta") )
 
+# ID hits in both directions
+comp_blast$strand <- ifelse(comp_blast$sstart < comp_blast$send, "+", "-")
+fwd <- comp_blast[comp_blast$strand == "+",]
+both_dir <- base::unique(fwd[fwd$qseqid %in% comp_blast[comp_blast$strand == "-",]$qseqid,]$qseqid)
+remove(fwd)
+
 # Add sequence data to tibble
-to_align_tbl <- inner_join(comp_blast, tibble(qseqid = names(comp_seq), qseq = as.character(comp_seq)), by = "qseqid") %>%
-  inner_join(tibble(sseqid = names(comp_seq), sseq = as.character(comp_seq)), by = "sseqid")
+to_align_tbl <- inner_join(uniq_blast, tibble(qseqid = names(comp_seq), qseq = as.character(comp_seq)), by = "qseqid") %>%
+  inner_join(tibble(sseqid = names(comp_seq), sseq = as.character(comp_seq)), by = "sseqid") %>%
+  as.data.frame()
 
-# make list of pairs to align
-message("Compiling sequence pairs")
-to_align <- purrr::map(seq_along(to_align_tbl$qseq), ~ {
-  DNAStringSet(c(to_align_tbl$qseq[.x], to_align_tbl$sseq[.x]))
-})
+# Distance calc function
+message('Calculating genetic distances')
+alnDist <- function(seqid){
+  
+  to_assess <- comp_blast[comp_blast$qseqid == seqid,]
+  # Determine if multistranded
+  if (seqid %in% both_dir) {
+    # Determine strands
+    to_assess <- to_assess %>%
+      dplyr::mutate(seqnames = qseqid,
+                    start = qstart,
+                    end = qend)
+    # calculate coverage in direction
+    fwd <- to_assess[to_assess$strand == "+",] %>% 
+      plyranges::as_granges() %>%
+      plyranges::reduce_ranges_directed()
+    rev <- to_assess[to_assess$strand == "-",] %>% 
+      plyranges::as_granges() %>%
+      plyranges::reduce_ranges_directed()
+    # select longest
+    if(sum(width(fwd)) > sum(width(rev))){
+      longest_hit <- GenomicRanges::GRanges(seqnames = fwd$qseqid[1],
+                                            ranges = IRanges::IRanges(min(fwd$qstart), max(fwd$qend)))
+    } else {
+      longest_hit <- GenomicRanges::GRanges(seqnames = re$qseqid[1],
+                                            ranges = IRanges::IRanges(min(rev$qstart), max(rev$qend)))
+    }
+    
+  } else {
+    # If in one piece seqlect blast hit region
+    longest_hit <- GenomicRanges::GRanges(seqnames = to_assess$qseqid[1],
+                                          ranges = IRanges::IRanges(min(to_assess$qstart), max(to_assess$qend)))
+  }
+  
+  # Combine longest extracxt and best hit from repeat data
+  paired_seq <- c(BSgenome::getSeq(comp_seq, longest_hit),
+                  repeat_data[[2]][names(repeat_data[[2]]) == to_assess$sseqid[1]])  
+  # get unaligned sequences and convert to ape
+  unaln_ape <- ape::as.DNAbin(paired_seq)
+  # align with mafft
+  aln_ape <- ips::mafft(unaln_ape, method = "localpair", thread = 1, exec = mafft_path, options = "--adjustdirection")
+  # calculate distances
+  dist_df <- as.data.frame(longest_hit)
+  dist_df$kdist <- ape::dist.dna(aln_ape, model="K80", pairwise.deletion = TRUE)[1]
+  dist_df$jcdist <- ape::dist.dna(aln_ape, model="JC69", pairwise.deletion = TRUE)[1]
+  dist_df$rawdist <- ape::dist.dna(aln_ape, model="raw", pairwise.deletion = TRUE)[1]
+  return(dist_df)
+  
+}
 
-# FURRR LOOP/FUNCTION TO CALCULATE AND RETURN DISTANCE
-message("Aligning and calculating distance")
-kdist_list <- mclapply(to_align, alnDist, mc.cores = opt$threads)
+# Run distance function
+kdist_list <- mclapply(to_align_tbl$qseqid, alnDist, mc.cores = opt$threads)
+
+message("Compiling kdist data")
+# Compile distance info
 kdist_tbl <- purrr::list_rbind(kdist_list) %>%
   dplyr::as_tibble() %>%
-  dplyr::mutate(kdist = base::round(kdist, 2),
+  dplyr::rename(names = seqnames,
+                inner_start = start,
+                inner_end = end) %>%
+  dplyr::mutate(names = as.character(names),
+                kdist = base::round(kdist, 2),
                 jcdist = base::round(jcdist, 2),
                 rawdist = base::round(rawdist, 2))
 readr::write_tsv(kdist_tbl, paste0(opt$outdir, "/final_kdist.tsv"))
 
 # Join with gff and write to file
+message("Final adjustments and writing to file")
 dplyr::inner_join(repeat_data[[1]], kdist_tbl, by = "names") %>%
   plyranges::select(-names) %>%
-  readr::write_tsv(paste0(opt$outdir, "/kdist_", sub(".gff", ".tsv", sub(".*\\/", "", opt$annotation_gff))))
+  dplyr::rename(strand = strand.x) %>%
+  dplyr::mutate(eg_start = start, eg_end = end, # retain in coordinates as metadata
+                start = start + inner_start - 1, # Fix gff coordinates to match
+                end = end - width.x + inner_end,
+                source = "BetterTiming", score = ".") %>% # Add source and score
+  dplyr::select(-con_width, -subclass, -superfamily, -strand.y, -width.x, -width.y, -inner_start, -inner_end) %>%
+  plyranges::as_granges() %>%
+  plyranges::write_gff3(paste0(opt$outdir, "/kdist_", opt$annotation_gff))
