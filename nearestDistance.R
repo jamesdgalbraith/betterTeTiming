@@ -86,7 +86,9 @@ gff2seq <- function(genome_path, library_path, gff_path, min_len, min_n){
   # Read in TEs, fix Penelopes, select necessary columns, 
   eg_gff <- plyranges::read_gff(gff_path) %>%
     plyranges::filter(seqnames %in% seqnames(genome_idx)) %>%
-    dplyr::select(type, ID) %>%
+    dplyr::as_tibble() %>%
+    dplyr::select_if(names(.) %in% c("seqnames", "start", "end", "strand", "type", "ID", "KIMURA80")) %>%
+    plyranges::as_granges() %>%
     dplyr::mutate(type = ifelse(type == "LINE/Penelope", "PLE/Penelope", as.character(type))) %>%
     dplyr::mutate(subclass = sub("/.*", "", type),
                   superfamily = sub("-.*", "", sub(".*/", "", type))) %>%
@@ -269,9 +271,9 @@ kdist_tbl <- purrr::list_rbind(kdist_list) %>%
                 inner_start = start,
                 inner_end = end) %>%
   dplyr::mutate(names = as.character(names),
-                kdist = base::round(kdist, 2),
-                jcdist = base::round(jcdist, 2),
-                rawdist = base::round(rawdist, 2))
+                kdist = base::round(kdist, 4),
+                jcdist = base::round(jcdist, 4),
+                rawdist = base::round(rawdist, 4))
 readr::write_tsv(kdist_tbl, paste0(opt$outdir, "/final_kdist.tsv"))
 
 # Join with gff and write to file
@@ -285,4 +287,4 @@ dplyr::inner_join(repeat_data[[1]], kdist_tbl, by = "names") %>%
                 source = "BetterTiming", score = ".") %>% # Add source and score
   dplyr::select(-con_width, -subclass, -superfamily, -strand.y, -width.x, -width.y, -inner_start, -inner_end) %>%
   plyranges::as_granges() %>%
-  plyranges::write_gff3(paste0(opt$outdir, "/kdist_", opt$annotation_gff))
+  plyranges::write_gff3(paste0(opt$outdir, "/kdist_", sub(".*\\/", "", opt$annotation_gff)))
