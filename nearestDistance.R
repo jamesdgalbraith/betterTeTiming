@@ -189,8 +189,10 @@ repeat_data <- gff2seq(opt$genome, opt$library, opt$annotation_gff, opt$min_len,
 blastOut <- getSeqBlastn(repeat_data[[1]], repeat_data[[2]], repeat_data[[3]], opt$outdir, opt$threads, opt$min_cov)
 comp_blast <- blastOut[[1]]
 comp_seq <- blastOut[[2]]
+filtered_gff <- repeat_data[[1]]
 base::remove(blastOut)
-suppressMessages(gc())
+base::remove(repeat_data)
+gc()
 uniq_blast <- comp_blast %>%
   dplyr::select(qseqid, sseqid) %>%
   base::unique()
@@ -203,12 +205,13 @@ Biostrings::writeXStringSet(comp_seq, paste0(opt$outdir, "/genomic_te_sequences.
 comp_blast$strand <- ifelse(comp_blast$sstart < comp_blast$send, "+", "-")
 fwd <- comp_blast[comp_blast$strand == "+",]
 both_dir <- base::unique(fwd[fwd$qseqid %in% comp_blast[comp_blast$strand == "-",]$qseqid,]$qseqid)
-remove(fwd)
+base::remove(fwd)
 
 # Add sequence data to tibble
 to_align_tbl <- inner_join(uniq_blast, tibble(qseqid = names(comp_seq), qseq = as.character(comp_seq)), by = "qseqid") %>%
   inner_join(tibble(sseqid = names(comp_seq), sseq = as.character(comp_seq)), by = "sseqid") %>%
   as.data.frame()
+to_align_v <- base::unique(to_align_tbl$qseqid)
 
 # Distance calc function
 message('Calculating genetic distances')
@@ -261,30 +264,55 @@ alnDist <- function(seqid){
 }
 
 # Run distance function
-kdist_list <- mclapply(to_align_tbl$qseqid, alnDist, mc.cores = opt$threads)
-
+kdist_list <- mclapply(to_align_v, alnDist, mc.cores = opt$threads)
 message("Compiling kdist data")
+
 # Compile distance info
-kdist_tbl <- purrr::list_rbind(kdist_list) %>%
-  dplyr::as_tibble() %>%
+message("Compiling list into dataframe")
+kdist_tbl <- purrr::list_rbind(kdist_list) 
+
+# Removing distance list and garbage collection
+base::remove(kdist_list)
+gc()
+
+message("Converting dataframe to tibble")
+kdist_tbl <- dplyr::as_tibble(kdist_tbl)
+
+message("Renaming columns")
+kdist_tbl <- kdist_tbl %>%
   dplyr::rename(names = seqnames,
                 inner_start = start,
-                inner_end = end) %>%
+                inner_end = end)
+
+message("Rounding distances")
+kdist_tbl <- kdist_tbl %>%
   dplyr::mutate(names = as.character(names),
                 kdist = base::round(kdist, 4),
                 jcdist = base::round(jcdist, 4),
                 rawdist = base::round(rawdist, 4))
+
+message("Wrirint distance tsv to file")
 readr::write_tsv(kdist_tbl, paste0(opt$outdir, "/final_kdist.tsv"))
 
 # Join with gff and write to file
-message("Final adjustments and writing to file")
-dplyr::inner_join(repeat_data[[1]], kdist_tbl, by = "names") %>%
-  plyranges::select(-names) %>%
-  dplyr::rename(strand = strand.x) %>%
-  dplyr::mutate(eg_start = start, eg_end = end, # retain in coordinates as metadata
-                start = start + inner_start - 1, # Fix gff coordinates to match
+message("Joining gff and removing unnecessary columns")
+filtered_gff <- dplyr::inner_join(filtered_gff, kdist_tbl, by = "names") %>%
+  dplyr::select(-names, -con_width, -subclass, -superfamily, -strand.y, -width.x, -width.y)
+
+message("Renaming strand")
+filtered_gff <- filtered_gff %>% dplyr::rename(strand = strand.x)
+
+message("Adjusting coordinates and removing inner coordinates")
+filtered_gff <- filtered_gff %>% 
+  dplyr::mutate(eg_start = start, eg_end = end,
+                start = start + inner_start - 1,
                 end = end - width.x + inner_end,
                 source = "BetterTiming", score = ".") %>% # Add source and score
-  dplyr::select(-con_width, -subclass, -superfamily, -strand.y, -width.x, -width.y, -inner_start, -inner_end) %>%
-  plyranges::as_granges() %>%
-  plyranges::write_gff3(paste0(opt$outdir, "/kdist_", sub(".*\\/", "", opt$annotation_gff)))
+  dplyr::select(-inner_start, -inner_end)
+
+message("Cobverteding to Granges object")
+filtered_gff <- filtered_gff %>% 
+  plyranges::as_granges()
+
+message("Writing gff to file")
+plyranges::write_gff3(filtered_gff, paste0(opt$outdir, "/kdist_", sub(".*\\/", "", opt$annotation_gff)))
