@@ -208,6 +208,7 @@ readr::write_tsv(comp_blast, paste0(opt$outdir, "/", opt$species_name, "_blast_b
 Biostrings::writeXStringSet(comp_seq, paste0(opt$outdir, "/", opt$species_name, "_genomic_te_sequences.fasta") )
 
 # ID hits in both directions
+message("Compiling sequence for alignments")
 comp_blast$strand <- ifelse(comp_blast$sstart < comp_blast$send, "+", "-")
 fwd <- comp_blast[comp_blast$strand == "+",]
 rev <- comp_blast[comp_blast$strand == "-",]
@@ -245,10 +246,10 @@ alnDist <- function(paired_sequence){
   aln_ape <- ips::mafft(unaln_ape, method = "localpair", thread = 1, exec = mafft_path, options = "--adjustdirection")
   # calculate distances
   dist_df <- base::data.frame(
-    seqnames = names(paired_sequence)[1],
-    k_dist = ape::dist.dna(aln_ape, model="K80", pairwise.deletion = TRUE)[1],
-    jc_dist = ape::dist.dna(aln_ape, model="JC69", pairwise.deletion = TRUE)[1],
-    raw_dist = ape::dist.dna(aln_ape, model="raw", pairwise.deletion = TRUE)[1])
+    names = names(paired_sequence)[1],
+    kdist = ape::dist.dna(aln_ape, model="K80", pairwise.deletion = TRUE)[1],
+    jcdist = ape::dist.dna(aln_ape, model="JC69", pairwise.deletion = TRUE)[1],
+    rawdist = ape::dist.dna(aln_ape, model="raw", pairwise.deletion = TRUE)[1])
   return(dist_df)
 }
 
@@ -267,12 +268,6 @@ gc()
 message("Converting dataframe to tibble")
 kdist_tbl <- dplyr::as_tibble(kdist_tbl)
 
-message("Renaming columns")
-kdist_tbl <- kdist_tbl %>%
-  dplyr::rename(names = seqnames,
-                inner_start = start,
-                inner_end = end)
-
 message("Rounding distances")
 kdist_tbl <- kdist_tbl %>%
   dplyr::mutate(names = as.character(names),
@@ -280,7 +275,7 @@ kdist_tbl <- kdist_tbl %>%
                 jcdist = base::round(jcdist, 4),
                 rawdist = base::round(rawdist, 4))
 
-message("Wrirint distance tsv to file")
+message("Writing distance tsv to file")
 readr::write_tsv(kdist_tbl, paste0(opt$outdir, "/", opt$species_name, "final_kdist.tsv"))
 
 # Join with gff and write to file
