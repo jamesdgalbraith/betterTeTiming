@@ -204,67 +204,50 @@ Biostrings::writeXStringSet(comp_seq, paste0(opt$outdir, "/genomic_te_sequences.
 # ID hits in both directions
 comp_blast$strand <- ifelse(comp_blast$sstart < comp_blast$send, "+", "-")
 fwd <- comp_blast[comp_blast$strand == "+",]
-both_dir <- base::unique(fwd[fwd$qseqid %in% comp_blast[comp_blast$strand == "-",]$qseqid,]$qseqid)
-base::remove(fwd)
+rev <- comp_blast[comp_blast$strand == "-",]
 
-# Add sequence data to tibble
-to_align_tbl <- inner_join(uniq_blast, tibble(qseqid = names(comp_seq), qseq = as.character(comp_seq)), by = "qseqid") %>%
-  inner_join(tibble(sseqid = names(comp_seq), sseq = as.character(comp_seq)), by = "sseqid") %>%
-  as.data.frame()
-to_align_v <- base::unique(to_align_tbl$qseqid)
+# get sequences to align
+fwd_q_ranges <- as_granges(tibble(seqnames = fwd$qseqid, start = fwd$qstart, end = fwd$qend, strand = fwd$strand))
+fwd_q_seq <- BSgenome::getSeq(comp_seq, fwd_q_ranges)
+names(fwd_q_seq) <- seqnames(fwd_q_ranges)
+fwd_s_ranges <- as_granges(tibble(seqnames = fwd$sseqid, start = fwd$sstart, end = fwd$send, strand = fwd$strand))
+fwd_s_seq <- BSgenome::getSeq(comp_seq, fwd_s_ranges)
+names(fwd_s_seq) <- seqnames(fwd_s_ranges)
+
+rev_q_ranges <- as_granges(tibble(seqnames = rev$qseqid, start = rev$qstart, end = rev$qend, strand = rev$strand))
+rev_q_seq <- BSgenome::getSeq(comp_seq, rev_q_ranges)
+names(rev_q_seq) <- seqnames(rev_q_ranges)
+rev_s_ranges <- as_granges(tibble(seqnames = rev$sseqid, start = rev$send, end = rev$sstart, strand = rev$strand))
+rev_s_seq <- BSgenome::getSeq(comp_seq, rev_s_ranges)
+names(rev_s_seq) <- seqnames(rev_s_ranges)
+
+# compile fwd and reverse, create list of pairs to align
+q_seq <- c(fwd_q_seq, rev_q_seq)
+s_seq <- c(fwd_s_seq, rev_s_seq)
+to_align <- purrr::map(seq_along(q_seq), ~ {
+  DNAStringSet(c(q_seq[.x], s_seq[.x]))
+})
+
 
 # Distance calc function
 message('Calculating genetic distances')
-alnDist <- function(seqid){
+alnDist <- function(paired_sequence){
   
-  to_assess <- comp_blast[comp_blast$qseqid == seqid,]
-  # Determine if multistranded
-  if (seqid %in% both_dir) {
-    # Determine strands
-    to_assess <- to_assess %>%
-      dplyr::mutate(seqnames = qseqid,
-                    start = qstart,
-                    end = qend)
-    # calculate coverage in direction
-    fwd <- to_assess[to_assess$strand == "+",] %>% 
-      plyranges::as_granges() %>%
-      plyranges::reduce_ranges_directed()
-    rev <- to_assess[to_assess$strand == "-",] %>% 
-      plyranges::as_granges() %>%
-      plyranges::reduce_ranges_directed()
-    # select longest
-    if(sum(width(fwd)) > sum(width(rev))){
-      longest_hit <- GenomicRanges::GRanges(seqnames = fwd$qseqid[1],
-                                            ranges = IRanges::IRanges(min(fwd$qstart), max(fwd$qend)))
-    } else {
-      longest_hit <- GenomicRanges::GRanges(seqnames = re$qseqid[1],
-                                            ranges = IRanges::IRanges(min(rev$qstart), max(rev$qend)))
-    }
-    
-  } else {
-    # If in one piece seqlect blast hit region
-    longest_hit <- GenomicRanges::GRanges(seqnames = to_assess$qseqid[1],
-                                          ranges = IRanges::IRanges(min(to_assess$qstart), max(to_assess$qend)))
-  }
-  
-  # Combine longest extracxt and best hit from repeat data
-  paired_seq <- c(BSgenome::getSeq(comp_seq, longest_hit),
-                  repeat_data[[2]][names(repeat_data[[2]]) == to_assess$sseqid[1]])  
   # get unaligned sequences and convert to ape
-  unaln_ape <- ape::as.DNAbin(paired_seq)
+  unaln_ape <- ape::as.DNAbin(paired_sequence)
   # align with mafft
   aln_ape <- ips::mafft(unaln_ape, method = "localpair", thread = 1, exec = mafft_path, options = "--adjustdirection")
   # calculate distances
-  dist_df <- as.data.frame(longest_hit)
-  dist_df$kdist <- ape::dist.dna(aln_ape, model="K80", pairwise.deletion = TRUE)[1]
-  dist_df$jcdist <- ape::dist.dna(aln_ape, model="JC69", pairwise.deletion = TRUE)[1]
-  dist_df$rawdist <- ape::dist.dna(aln_ape, model="raw", pairwise.deletion = TRUE)[1]
+  dist_df <- base::data.frame(
+    seqnames = names(paired_sequence)[1],
+    k_dist = ape::dist.dna(aln_ape, model="K80", pairwise.deletion = TRUE)[1],
+    jc_dist = ape::dist.dna(aln_ape, model="JC69", pairwise.deletion = TRUE)[1],
+    raw_dist = ape::dist.dna(aln_ape, model="raw", pairwise.deletion = TRUE)[1])
   return(dist_df)
-  
 }
 
 # Run distance function
-kdist_list <- mclapply(to_align_v, alnDist, mc.cores = opt$threads)
+kdist_list <- mclapply(to_align, alnDist, mc.cores = opt$threads)
 message("Compiling kdist data")
 
 # Compile distance info
