@@ -23,8 +23,10 @@ option_list <- list(
               help="Path to EarlGrey gff"),
   make_option(c("-o", "--outdir"), default=NA, type = "character",
               help="Output directory"),
+  make_option(c("-s", "--species_name"), default=NA, type = "character",
+              help="Species name to use as prefix for out files"),
   make_option(c("-t", "--threads"), default=1, type = "integer",
-              help="Prefix to add to gene names"),
+              help="Number of threads to use"),
   make_option(c("-L", "--min_len"), default=250, type = "integer",
               help="Minimum length of repeats for a superfamily to be considered"),
   make_option(c("-N", "--min_n"), default=250, type = "integer",
@@ -40,6 +42,10 @@ if (!is.na(opt$genome)) {
   genome <- opt$genome
 } else {
   stop("Path to genome assembly FASTA must be provided. See script usage (--help)")
+}
+
+if (is.na(opt$species_name)) {
+  stop("Species name must be provided to prefix output files")
 }
 
 if (!is.na(opt$library)) {
@@ -198,8 +204,8 @@ uniq_blast <- comp_blast %>%
   base::unique()
 
 # write sequences and best hit to file
-readr::write_tsv(comp_blast, paste0(opt$outdir, "/blast_best_hits.tsv"))
-Biostrings::writeXStringSet(comp_seq, paste0(opt$outdir, "/genomic_te_sequences.fasta") )
+readr::write_tsv(comp_blast, paste0(opt$outdir, "/", opt$species_name, "_blast_best_hits.tsv"))
+Biostrings::writeXStringSet(comp_seq, paste0(opt$outdir, "/", opt$species_name, "_genomic_te_sequences.fasta") )
 
 # ID hits in both directions
 comp_blast$strand <- ifelse(comp_blast$sstart < comp_blast$send, "+", "-")
@@ -275,7 +281,7 @@ kdist_tbl <- kdist_tbl %>%
                 rawdist = base::round(rawdist, 4))
 
 message("Wrirint distance tsv to file")
-readr::write_tsv(kdist_tbl, paste0(opt$outdir, "/final_kdist.tsv"))
+readr::write_tsv(kdist_tbl, paste0(opt$outdir, "/", opt$species_name, "final_kdist.tsv"))
 
 # Join with gff and write to file
 message("Joining gff and removing unnecessary columns")
