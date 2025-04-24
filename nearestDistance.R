@@ -281,21 +281,7 @@ readr::write_tsv(kdist_tbl, paste0(opt$outdir, "/", opt$species_name, "final_kdi
 # Join with gff and write to file
 message("Joining gff and removing unnecessary columns")
 filtered_gff <- dplyr::inner_join(filtered_gff, kdist_tbl, by = "names") %>%
-  dplyr::select(-names, -con_width, -subclass, -superfamily, -strand.y, -width.x, -width.y)
-
-message("Renaming strand")
-filtered_gff <- filtered_gff %>% dplyr::rename(strand = strand.x)
-
-message("Adjusting coordinates and removing inner coordinates")
-filtered_gff <- filtered_gff %>% 
-  dplyr::mutate(eg_start = start, eg_end = end,
-                start = start + inner_start - 1,
-                end = end - width.x + inner_end,
-                source = "BetterTiming", score = ".") %>% # Add source and score
-  dplyr::select(-inner_start, -inner_end)
-
-message("Cobverteding to Granges object")
-filtered_gff <- filtered_gff %>% 
+  dplyr::select(-con_width, -names, -subclass, -superfamily) %>%
   plyranges::as_granges()
 
 message("Writing gff to file")
