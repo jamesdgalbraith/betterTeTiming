@@ -96,10 +96,9 @@ gff2seq <- function(genome_path, library_path, gff_path, min_len, min_n){
     dplyr::select_if(names(.) %in% c("seqnames", "start", "end", "strand", "type", "ID", "KIMURA80")) %>%
     plyranges::as_granges() %>%
     dplyr::mutate(type = ifelse(type == "LINE/Penelope", "PLE/Penelope", as.character(type))) %>%
-    dplyr::mutate(subclass = sub("/.*", "", type),
-                  superfamily = sub("-.*", "", sub(".*/", "", type))) %>%
+    dplyr::mutate(subclass = sub("/.*", "", type)) %>%
     dplyr::filter(subclass != "Other") %>%
-    dplyr::filter(subclass %in% c("LINE", "LTR", "DNA", "PLE", "RC", "SINE"),  # just for testing, alter when complete
+    dplyr::filter(subclass %in% c("LINE", "LTR", "DNA", "PLE", "RC", "SINE", "Unknown"),  # just for testing, alter when complete
                   width >=min_len) %>%
     dplyr::mutate(ID = tolower(ID))
   message("Reading library")
@@ -276,12 +275,12 @@ kdist_tbl <- kdist_tbl %>%
                 rawdist = base::round(rawdist, 4))
 
 message("Writing distance tsv to file")
-readr::write_tsv(kdist_tbl, paste0(opt$outdir, "/", opt$species_name, "final_kdist.tsv"))
+readr::write_tsv(kdist_tbl, paste0(opt$outdir, "/", opt$species_name, "_final_kdist.tsv"))
 
 # Join with gff and write to file
 message("Joining gff and removing unnecessary columns")
 filtered_gff <- dplyr::inner_join(filtered_gff, kdist_tbl, by = "names") %>%
-  dplyr::select(-con_width, -names, -subclass, -superfamily) %>%
+  dplyr::select(-con_width, -names, -subclass) %>%
   plyranges::as_granges()
 
 message("Writing gff to file")
