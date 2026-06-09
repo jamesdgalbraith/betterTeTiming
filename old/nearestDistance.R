@@ -50,6 +50,10 @@ if (is.na(opt$species_name)) {
 
 if (!is.na(opt$library)) {
   library <- opt$library
+  repeat_family_n <- base::as.data.frame(base::table(base::sub("#.*", "", names(Biostrings::readDNAStringSet(library)))))
+  if(nrow(repeat_family_n[repeat_family_n$Freq >1,])){
+    stop("Multiple sequence in the repeat library FASTA have the same name. Please remove the duplicate.")
+  }
 } else {
   stop("Path to repeat library FASTA must be provided. See script usage (--help)")
 }
