@@ -228,7 +228,6 @@ def main():
 		print(tmp_dir)
 	# Set repeat subclasses to be assesed
 	assessable = ['LINE', 'LTR', 'RC', 'DNA', 'SINE', 'PLE', 'Unknown']
-	assessable = ['LINE']
 	# make fasta for each repeat type
 	repeat_types = make_fastas(args.in_gff, args.genome, tmp_dir, assessable)
 	# align repeats to each other and calculate JC_dist
