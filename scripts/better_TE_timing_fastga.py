@@ -154,7 +154,7 @@ def align_calc(repeat_types, tmp_dir, threads, coverage):
                     qend=int(cols[3])
                     tname=cols[5]
                     # Don't calculate self alignments
-                    if qname is tname:
+                    if qname == tname:
                         continue
                     # If already calculate skip
                     if qname in best_hits.keys():

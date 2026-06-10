@@ -1,3 +1,20 @@
+# import libraries
+import argparse
+from collections import defaultdict
+from pathlib import Path
+import re
+import sys
+import os
+import math
+import tempfile
+import subprocess
+import time
+from pyfaidx import Fasta
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+from Bio import SeqIO
+from shutil import copyfile
+
 def argsParser():
 	
 	parser = argparse.ArgumentParser(description='Calculates Jukes-Cantor and Gap-compressed identity\ngiven gff of TEs in EarlGrey format')
@@ -150,7 +167,7 @@ def align_calc(repeat_types, tmp_dir, threads, coverage, task):
 					pident=cols[7]
 					
 					# Skip self alignments
-					if qname is tname:
+					if qname == tname:
 						continue
 					# If already calculate skip
 					if qname in best_hits.keys():
@@ -196,24 +213,9 @@ def write_gff(gff_file, out_gff_path, best_hits):
 def main():
 
 	# argsparse and perform checks before running
-	import argparse
+	
 	args=argsParser()
-	# import libraries
-	from collections import defaultdict
-	from pathlib import Path
-	import re
-	import sys
-	import os
-	import math
-	import tempfile
-	import subprocess
-	import time
-	from pyfaidx import Fasta
-	from Bio.Seq import Seq
-	from Bio.SeqRecord import SeqRecord
-	from Bio import SeqIO
-	from shutil import copyfile
-
+	
 	# Make temporary directory, if debugging use desired path
 	if args.debug:
 		tmp_dir=args.tmp_dir
@@ -226,6 +228,7 @@ def main():
 		print(tmp_dir)
 	# Set repeat subclasses to be assesed
 	assessable = ['LINE', 'LTR', 'RC', 'DNA', 'SINE', 'PLE', 'Unknown']
+	assessable = ['LINE']
 	# make fasta for each repeat type
 	repeat_types = make_fastas(args.in_gff, args.genome, tmp_dir, assessable)
 	# align repeats to each other and calculate JC_dist
